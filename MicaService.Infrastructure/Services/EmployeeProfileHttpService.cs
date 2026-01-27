@@ -16,4 +16,7 @@ public sealed class EmployeeProfileHttpService(IEmployeeProfileService service)
 
     public Task<ApiResponseDto<EmployeeProfileResponseDto>> RefreshAsync()
         => _service.RefreshAsync();
+
+    public ApiResponseDto<EmployeeRefreshStatusDto> GetRefreshStatus()
+        => _service.GetRefreshStatus();
 }

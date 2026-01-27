@@ -1,14 +1,14 @@
-using System.Security.Cryptography;
 using MicaService.Api.Jobs;
 using MicaService.Api.Middlewares;
 using MicaService.Application.Repositories;
 using MicaService.Application.Services.Interfaces;
 using MicaService.Infrastructure.Persistence;
 using MicaService.Infrastructure.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Authentication.Negotiate;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.OpenApi.Models;
 using Quartz;
+using MicaService.Api.Authentication;
 
 namespace MicaService.Api;
 
@@ -28,6 +28,7 @@ public sealed class Startup(IConfiguration config)
         services.AddScoped<ILocationHttpService, LocationHttpService>();
         services.AddScoped<IEmployeeProfileService, EmployeeProfileService>();
         services.AddScoped<IEmployeeProfileHttpService, EmployeeProfileHttpService>();
+        services.AddSingleton<IClaimsTransformation, WindowsClaimsTransformation>();
 
         var cron = config["Quartz:SectionRefreshCron"] ?? "0 0 6,12,18 ? * MON-FRI *";
         var locationCron = config["Quartz:LocationRefreshCron"] ?? cron;
@@ -67,62 +68,27 @@ public sealed class Startup(IConfiguration config)
                     policy.WithOrigins(allowedOrigins)
                         .AllowAnyHeader()
                         .AllowAnyMethod()
-                        .AllowCredentials();
+                        .AllowCredentials()
+                        .WithExposedHeaders("X-Next-Cursor", "X-Prev-Cursor", "X-Total-Count");
                 }
                 else
                 {
                     policy.AllowAnyOrigin()
                         .AllowAnyHeader()
-                        .AllowAnyMethod();
+                        .AllowAnyMethod()
+                        .WithExposedHeaders("X-Next-Cursor", "X-Prev-Cursor", "X-Total-Count");
                 }
             });
         });
 
-        var jwt = config.GetSection("Jwt");
-        var publicKeyPath = jwt["PublicKeyPath"];
-        var privateKeyPath = jwt["PrivateKeyPath"];
-
-        if (!string.IsNullOrWhiteSpace(publicKeyPath))
+        var authBuilder = services.AddAuthentication(options =>
         {
-            var rsa = RSA.Create();
-            rsa.ImportFromPem(File.ReadAllText(publicKeyPath));
-            var decryptionRsa = !string.IsNullOrWhiteSpace(privateKeyPath)
-                ? LoadRsa(privateKeyPath)
-                : null;
+            options.DefaultAuthenticateScheme = NegotiateDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = NegotiateDefaults.AuthenticationScheme;
+            options.DefaultScheme = NegotiateDefaults.AuthenticationScheme;
+        });
 
-            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(o =>
-                {
-                    o.MapInboundClaims = false;
-                    o.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuer = true,
-                        ValidateAudience = true,
-                        ValidateLifetime = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = jwt["Issuer"],
-                        ValidAudience = jwt["Audience"],
-                        IssuerSigningKey = new RsaSecurityKey(rsa),
-                        TokenDecryptionKey = decryptionRsa is not null
-                            ? new RsaSecurityKey(decryptionRsa)
-                            : null,
-                        RoleClaimType = "role",
-                        NameClaimType = "username"
-                    };
-                    o.Events = new JwtBearerEvents
-                    {
-                        OnMessageReceived = context =>
-                        {
-                            if (context.Request.Cookies.TryGetValue("access_token", out var token))
-                            {
-                                context.Token = token;
-                            }
-
-                            return Task.CompletedTask;
-                        }
-                    };
-                });
-        }
+        authBuilder.AddNegotiate();
 
         services.AddAuthorization();
 
@@ -136,30 +102,6 @@ public sealed class Startup(IConfiguration config)
                 Description = "Mica Department Cache Service"
             });
 
-            c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-            {
-                Name = "Authorization",
-                Type = SecuritySchemeType.Http,
-                Scheme = "bearer",
-                BearerFormat = "JWT",
-                In = ParameterLocation.Header,
-                Description = "Input JWT token: Bearer {token}"
-            });
-
-            c.AddSecurityRequirement(new OpenApiSecurityRequirement
-            {
-                {
-                    new OpenApiSecurityScheme
-                    {
-                        Reference = new OpenApiReference
-                        {
-                            Type = ReferenceType.SecurityScheme,
-                            Id = "Bearer"
-                        }
-                    },
-                    Array.Empty<string>()
-                }
-            });
         });
     }
 
@@ -184,11 +126,5 @@ public sealed class Startup(IConfiguration config)
         app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
     }
 
-    private static RSA LoadRsa(string path)
-    {
-        var rsa = RSA.Create();
-        rsa.ImportFromPem(File.ReadAllText(path));
-        return rsa;
-    }
 }
 

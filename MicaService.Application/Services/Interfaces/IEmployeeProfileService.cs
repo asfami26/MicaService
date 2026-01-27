@@ -11,4 +11,5 @@ public interface IEmployeeProfileService
         string employeeId,
         CancellationToken cancellationToken = default);
     Task<ApiResponseDto<EmployeeProfileResponseDto>> RefreshAsync(CancellationToken cancellationToken = default);
+    ApiResponseDto<EmployeeRefreshStatusDto> GetRefreshStatus();
 }

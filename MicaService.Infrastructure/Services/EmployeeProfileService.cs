@@ -3,13 +3,17 @@ using MicaService.Application.Constants;
 using MicaService.Application.DTOs;
 using MicaService.Application.Repositories;
 using MicaService.Application.Services.Interfaces;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace MicaService.Infrastructure.Services;
 
-public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
+public sealed class EmployeeProfileService(IEmployeeProfileDbContext db, IMemoryCache cache)
     : IEmployeeProfileService
 {
     private readonly IEmployeeProfileDbContext _db = db;
+    private readonly IMemoryCache _cache = cache;
+    private const string RefreshingKey = "employee.profile.refreshing";
+    private const string RefreshingStartedKey = "employee.profile.refreshing.started";
 
     public async Task<ApiResponseDto<EmployeeProfileResponseDto>> GetAllAsync(
         string? deptId = null,
@@ -50,24 +54,50 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
     public async Task<ApiResponseDto<EmployeeProfileResponseDto>> RefreshAsync(
         CancellationToken cancellationToken = default)
     {
+        if (_cache.TryGetValue(RefreshingKey, out bool inProgress) && inProgress)
+        {
+            return new ApiResponseDto<EmployeeProfileResponseDto>(
+                ResponseCodes.Ok,
+                ResponseMessages.EmployeesRefreshInProgress,
+                new List<EmployeeProfileResponseDto>());
+        }
+
+        var startedAt = DateTimeOffset.UtcNow;
+        _cache.Set(RefreshingKey, true, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+        });
+        _cache.Set(RefreshingStartedKey, startedAt, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(30)
+        });
+
         const int RefreshTimeoutSeconds = 300;
         using var connection = _db.CreateConnection();
         connection.Open();
         using var transaction = connection.BeginTransaction();
 
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                "TRUNCATE TABLE EMP.EmployeeProfileCache;",
-                commandTimeout: RefreshTimeoutSeconds,
-                transaction: transaction,
-                cancellationToken: cancellationToken));
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                InsertCacheSql,
-                commandTimeout: RefreshTimeoutSeconds,
-                transaction: transaction,
-                cancellationToken: cancellationToken));
-        transaction.Commit();
+        try
+        {
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    "TRUNCATE TABLE EMP.EmployeeProfileCache;",
+                    commandTimeout: RefreshTimeoutSeconds,
+                    transaction: transaction,
+                    cancellationToken: cancellationToken));
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    InsertCacheSql,
+                    commandTimeout: RefreshTimeoutSeconds,
+                    transaction: transaction,
+                    cancellationToken: cancellationToken));
+            transaction.Commit();
+        }
+        finally
+        {
+            _cache.Remove(RefreshingKey);
+            _cache.Remove(RefreshingStartedKey);
+        }
 
         var count = await connection.ExecuteScalarAsync<int>(
             new CommandDefinition(
@@ -80,6 +110,22 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             string.Format(ResponseMessages.EmployeesRefreshedCountFormat, count),
             new List<EmployeeProfileResponseDto>()
         );
+    }
+
+    public ApiResponseDto<EmployeeRefreshStatusDto> GetRefreshStatus()
+    {
+        var inProgress = _cache.TryGetValue(RefreshingKey, out bool status) && status;
+        var startedAt = _cache.TryGetValue(RefreshingStartedKey, out DateTimeOffset started)
+            ? started
+            : (DateTimeOffset?)null;
+
+        return new ApiResponseDto<EmployeeRefreshStatusDto>(
+            ResponseCodes.Ok,
+            ResponseMessages.EmployeesRefreshStatusLoaded,
+            new List<EmployeeRefreshStatusDto>
+            {
+                new(inProgress, startedAt)
+            });
     }
 
     private static string GetCacheSelectSql(string? deptId)
@@ -103,12 +149,16 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             Email,
             PersonalEmail,
             Tax,
+            Phone,
+            MaritalStatus,
             Education1,
             Edu1GradYear,
             Edu1Majoring,
+            Edu1Institute,
             Education2,
             Edu2GradYear,
             Edu2Majoring,
+            Edu2Institute,
             Yos,
             AllExp
         FROM EMP.EmployeeProfileCache
@@ -130,12 +180,16 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             Email,
             PersonalEmail,
             Tax,
+            Phone,
+            MaritalStatus,
             Education1,
             Edu1GradYear,
             Edu1Majoring,
+            Edu1Institute,
             Education2,
             Edu2GradYear,
             Edu2Majoring,
+            Edu2Institute,
             Yos,
             AllExp
         FROM EMP.EmployeeProfileCache
@@ -158,12 +212,16 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             Email,
             PersonalEmail,
             Tax,
+            Phone,
+            MaritalStatus,
             Education1,
             Edu1GradYear,
             Edu1Majoring,
+            Edu1Institute,
             Education2,
             Edu2GradYear,
             Edu2Majoring,
+            Edu2Institute,
             Yos,
             AllExp
         FROM EMP.EmployeeProfileCache
@@ -186,12 +244,16 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             Email,
             PersonalEmail,
             Tax,
+            Phone,
+            MaritalStatus,
             Education1,
             Edu1GradYear,
             Edu1Majoring,
+            Edu1Institute,
             Education2,
             Edu2GradYear,
             Edu2Majoring,
+            Edu2Institute,
             Yos,
             AllExp
         )
@@ -221,12 +283,16 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
             em.Email AS Email,
             te.EMAIL AS PersonalEmail,
             te.TAX_STATUS_ID AS Tax,
+            te.PHONE AS Phone,
+            ms.DESCRIPTION AS MaritalStatus,
             edu.EDUCATION_1 AS Education1,
             edu.EDU1_GRAD_YEAR AS Edu1GradYear,
             edu.EDU1_MAJORING AS Edu1Majoring,
+            edu.EDU1_INSTITUTE AS Edu1Institute,
             edu.EDUCATION_2 AS Education2,
             edu.EDU2_GRAD_YEAR AS Edu2GradYear,
             edu.EDU2_MAJORING AS Edu2Majoring,
+            edu.EDU2_INSTITUTE AS Edu2Institute,
             CASE
                 WHEN exp.CurrentExp IS NULL THEN 0
                 WHEN PATINDEX('%[^0-9]%', exp.CurrentExp) = 0 THEN CAST(exp.CurrentExp AS INT)
@@ -248,6 +314,7 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
         FROM PFNATT.dbo.TBL_EMP te
         LEFT JOIN PFNATT.dbo.TBL_POSITION tp ON te.POSITION_ID = tp.POSITION_ID
         LEFT JOIN PFNATT.dbo.TBL_SECTION ts ON te.SECT_ID = ts.SECT_ID
+        LEFT JOIN PFNATT.dbo.TBL_MAR_STAT ms ON ms.MAR_STAT_ID = te.MAR_STAT_ID
         OUTER APPLY (
             SELECT TOP (1) e.EMAIL AS Email
             FROM PFNATT.dbo.TBL_EMAIL e
@@ -261,19 +328,25 @@ public sealed class EmployeeProfileService(IEmployeeProfileDbContext db)
         ) exp
         OUTER APPLY (
             SELECT
-                MAX(CASE WHEN rn = 1 THEN INSTITUTE END) AS EDUCATION_1,
+                MAX(CASE WHEN rn = 1 THEN EDUCATION_TYPE END) AS EDUCATION_1,
                 MAX(CASE WHEN rn = 1 THEN GRAD_YEAR END) AS EDU1_GRAD_YEAR,
                 MAX(CASE WHEN rn = 1 THEN MAJORING END) AS EDU1_MAJORING,
-                MAX(CASE WHEN rn = 2 THEN INSTITUTE END) AS EDUCATION_2,
+                MAX(CASE WHEN rn = 1 THEN INSTITUTE END) AS EDU1_INSTITUTE,
+                MAX(CASE WHEN rn = 2 THEN EDUCATION_TYPE END) AS EDUCATION_2,
                 MAX(CASE WHEN rn = 2 THEN GRAD_YEAR END) AS EDU2_GRAD_YEAR,
-                MAX(CASE WHEN rn = 2 THEN MAJORING END) AS EDU2_MAJORING
+                MAX(CASE WHEN rn = 2 THEN MAJORING END) AS EDU2_MAJORING,
+                MAX(CASE WHEN rn = 2 THEN INSTITUTE END) AS EDU2_INSTITUTE
             FROM (
                 SELECT TOP (2)
+                    gt.TYPE_NAME AS EDUCATION_TYPE,
                     ed.INSTITUTE,
                     ed.GRAD_YEAR,
                     ed.MAJORING,
                     ROW_NUMBER() OVER (ORDER BY ed.GRAD_YEAR DESC) AS rn
                 FROM PFNATT.dbo.TBL_EDUCATION ed
+                LEFT JOIN PFNATT.dbo.TBL_GENERAL_TYPE gt
+                    ON gt.[TYPE] = 'EducationType'
+                    AND gt.TYPE_ID = ed.EDU_ID
                 WHERE ed.EMP_ID = te.EMP_ID
                   AND UPPER(ed.INSTITUTE) NOT LIKE '%SD%'
                   AND UPPER(ed.INSTITUTE) NOT LIKE '%ELEMENTARY%'
