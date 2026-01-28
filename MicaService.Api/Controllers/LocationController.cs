@@ -5,6 +5,7 @@ using MicaService.Application.Services.Interfaces;
 
 namespace MicaService.Api.Controllers;
 
+[AllowAnonymous]
 [ApiController]
 [Route("api/locations")]
 // [Authorize]

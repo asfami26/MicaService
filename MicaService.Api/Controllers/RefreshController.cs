@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace MicaService.Api.Controllers;
 
+[AllowAnonymous]
 [ApiController]
 [Route("api/refresh")]
 [Authorize]

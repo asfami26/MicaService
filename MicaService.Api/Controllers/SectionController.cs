@@ -5,6 +5,7 @@ using MicaService.Application.DTOs;
 
 namespace MicaService.Api.Controllers;
 
+[AllowAnonymous]
 [ApiController]
 [Route("api/sections")]
 // [Authorize]

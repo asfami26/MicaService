@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace MicaService.Api.Controllers;
 
+[AllowAnonymous]
 [ApiController]
 [Route("api/employees")]
 // [Authorize]
