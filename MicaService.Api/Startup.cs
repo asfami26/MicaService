@@ -14,7 +14,7 @@ namespace MicaService.Api;
 
 public sealed class Startup(IConfiguration config)
 {
-    public void ConfigureServices(IServiceCollection services)
+    public void ConfigureServices(IServiceCollection services, IWebHostEnvironment env)
     {
         services.AddControllers();
         services.AddMemoryCache();
@@ -88,7 +88,21 @@ public sealed class Startup(IConfiguration config)
             options.DefaultScheme = NegotiateDefaults.AuthenticationScheme;
         });
 
-        authBuilder.AddNegotiate();
+        if (env.IsDevelopment())
+        {
+            // DEV ONLY (Linux/local): bypass Windows/Kerberos and use DevAuth:UserName.
+            // Keep this block for local dev; production on Windows IIS must use Negotiate.
+            authBuilder.AddScheme<DevAuthenticationOptions, DevAuthenticationHandler>(
+                NegotiateDefaults.AuthenticationScheme,
+                options =>
+                {
+                    options.UserName = config.GetValue<string>("DevAuth:UserName");
+                });
+        }
+        else
+        {
+            authBuilder.AddNegotiate();
+        }
 
         services.AddAuthorization();
 
