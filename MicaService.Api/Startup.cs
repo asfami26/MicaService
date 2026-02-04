@@ -28,6 +28,8 @@ public sealed class Startup(IConfiguration config)
         services.AddScoped<ILocationHttpService, LocationHttpService>();
         services.AddScoped<IEmployeeProfileService, EmployeeProfileService>();
         services.AddScoped<IEmployeeProfileHttpService, EmployeeProfileHttpService>();
+        services.AddScoped<IEmployeeExperienceService, EmployeeExperienceService>();
+        services.AddScoped<IEmployeeExperienceHttpService, EmployeeExperienceHttpService>();
         services.AddSingleton<IClaimsTransformation, WindowsClaimsTransformation>();
 
         var cron = config["Quartz:SectionRefreshCron"] ?? "0 0 6,12,18 ? * MON-FRI *";

@@ -13,10 +13,12 @@ namespace MicaService.Api.Controllers;
 // [Authorize]
 public sealed class EmployeeProfileController(
     IEmployeeProfileHttpService service,
+    IEmployeeExperienceHttpService experienceService,
     IConfiguration configuration
 ) : ControllerBase
 {
     private readonly IEmployeeProfileHttpService _service = service;
+    private readonly IEmployeeExperienceHttpService _experienceService = experienceService;
     private readonly IConfiguration _configuration = configuration;
 
     [HttpGet]
@@ -28,6 +30,11 @@ public sealed class EmployeeProfileController(
     [ProducesResponseType(typeof(ApiResponseDto<EmployeeProfileResponseDto>), StatusCodes.Status200OK)]
     public Task<ApiResponseDto<EmployeeProfileResponseDto>> GetById(string employeeId)
         => _service.GetByIdAsync(employeeId);
+
+    [HttpGet("{employeeId}/experiences")]
+    [ProducesResponseType(typeof(ApiResponseDto<EmployeeExperienceResponseDto>), StatusCodes.Status200OK)]
+    public Task<ApiResponseDto<EmployeeExperienceResponseDto>> GetExperiences(string employeeId)
+        => _experienceService.GetByEmployeeIdAsync(employeeId);
 
     [HttpGet("refresh")]
     [ProducesResponseType(typeof(ApiResponseDto<EmployeeProfileResponseDto>), StatusCodes.Status200OK)]

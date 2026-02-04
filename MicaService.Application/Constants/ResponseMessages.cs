@@ -10,6 +10,7 @@ public static class ResponseMessages
     public const string LocationsRefreshed = "Locations refreshed";
     public const string EmployeesLoadedFromCacheTable = "Employees loaded from DB cache table";
     public const string EmployeeLoadedFromCacheTable = "Employee loaded from DB cache table";
+    public const string EmployeeExperiencesLoaded = "Employee experiences loaded";
     public const string EmployeesRefreshedCountFormat = "Employees refreshed. Count={0}";
     public const string EmployeesRefreshInProgress = "Employee refresh already in progress";
     public const string EmployeesRefreshStatusLoaded = "Employee refresh status loaded";
