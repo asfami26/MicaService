@@ -17,6 +17,7 @@ public sealed record EmployeeProfileResponseDto(
     string? Tax,
     string? Phone,
     string? MaritalStatus,
+    DateTime? EndDateContract,
     string? Education1,
     DateTime? Edu1GradYear,
     string? Edu1Majoring,
